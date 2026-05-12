@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GPS Tracker</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      font-family: Arial;
+      text-align: center;
+      background: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      margin-top: 30px;
+      border-radius: 12px;
+      display: inline-block;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+
+    #dist {
+      font-size: 40px;
+      font-weight: bold;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    #debug {
+      margin-top: 10px;
+      font-size: 12px;
+      color: gray;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .start { background: green; color: white; }
+    .stop { background: red; color: white; }
+  </style>
+</head>
+
+<body>
+
+<h2>📍 Live GPS Meter Tracker</h2>
+
+<div class="card">
+  <div>Distance</div>
+  <div id="dist">0</div>
+  <div>meter</div>
+
+  <div id="status">Status: Not Started</div>
+  <div id="debug">Waiting...</div>
+</div>
+
+<br>
+
+<button class="start" onclick="startTracking()">Start</button>
+<button class="stop" onclick="stopTracking()">Stop</button>
+
+<script>
+
+let watchId = null;
+let lastPos = null;
+let total = 0;
+
+// accurate distance formula
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2)**2 +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2)**2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
+}
+
+function startTracking() {
+
+  if (!navigator.geolocation) {
+    alert("GPS not supported");
+    return;
+  }
+
+  document.getElementById("status").innerText = "Status: Tracking Started ✔️";
+
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+
+      let current = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      };
+
+      document.getElementById("debug").innerText =
+        "Lat: " + current.lat.toFixed(6) +
+        " | Lng: " + current.lng.toFixed(6);
+
+      if (lastPos) {
+
+        let d = getDistance(
+          lastPos.lat,
+          lastPos.lng,
+          current.lat,
+          current.lng
+        );
+
+        // ignore GPS noise
+        if (d > 3) {
+          total += d;
+          document.getElementById("dist").innerText =
+            Math.round(total);
+        }
+      }
+
+      lastPos = current;
+
+    },
+    (err) => {
+      document.getElementById("status").innerText =
+        "Error: " + err.message;
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
+    }
+  );
+}
+
+function stopTracking() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  document.getElementById("status").innerText =
+    "Status: Stopped ⛔";
+}
+
+</script>
+
+</body>
+</html>
