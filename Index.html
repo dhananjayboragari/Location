@@ -2,7 +2,6 @@
 <html>
 <head>
   <title>GPS Tracker</title>
-
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <style>
@@ -21,6 +20,7 @@
       border-radius: 12px;
       display: inline-block;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      min-width: 250px;
     }
 
     #dist {
@@ -31,7 +31,6 @@
     #status {
       margin-top: 10px;
       font-weight: bold;
-      color: #333;
     }
 
     #debug {
@@ -78,19 +77,19 @@ let watchId = null;
 let lastPos = null;
 let total = 0;
 
-// accurate distance formula
+// better accuracy filter
 function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
+  const R = 6371000;
 
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
 
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-  const a = Math.sin(Δφ/2)**2 +
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
             Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2)**2;
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
@@ -105,18 +104,24 @@ function startTracking() {
   }
 
   document.getElementById("status").innerText = "Status: Tracking Started ✔️";
+  document.getElementById("dist").innerText = "0";
+  total = 0;
+  lastPos = null;
 
   watchId = navigator.geolocation.watchPosition(
     (pos) => {
 
-      let current = {
+      const current = {
         lat: pos.coords.latitude,
-        lng: pos.coords.longitude
+        lng: pos.coords.longitude,
+        acc: pos.coords.accuracy
       };
 
       document.getElementById("debug").innerText =
-        "Lat: " + current.lat.toFixed(6) +
-        " | Lng: " + current.lng.toFixed(6);
+        `Lat: ${current.lat.toFixed(6)} | Lng: ${current.lng.toFixed(6)} | Acc: ${Math.round(current.acc)}m`;
+
+      // ignore bad accuracy
+      if (current.acc > 30) return;
 
       if (lastPos) {
 
@@ -127,8 +132,8 @@ function startTracking() {
           current.lng
         );
 
-        // ignore GPS noise
-        if (d > 3) {
+        // GPS noise filter
+        if (d > 5 && d < 200) {
           total += d;
           document.getElementById("dist").innerText =
             Math.round(total);
@@ -136,7 +141,6 @@ function startTracking() {
       }
 
       lastPos = current;
-
     },
     (err) => {
       document.getElementById("status").innerText =
@@ -145,7 +149,7 @@ function startTracking() {
     {
       enableHighAccuracy: true,
       maximumAge: 0,
-      timeout: 10000
+      timeout: 15000
     }
   );
 }
