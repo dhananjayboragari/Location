@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>GPS Tracker</title>
+  <title>Pro GPS Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <style>
     body {
       font-family: Arial;
       text-align: center;
-      background: #f0f0f0;
+      background: #f5f5f5;
       margin: 0;
       padding: 20px;
     }
@@ -16,16 +16,17 @@
     .card {
       background: white;
       padding: 20px;
-      margin-top: 30px;
+      margin-top: 20px;
       border-radius: 12px;
       display: inline-block;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      min-width: 250px;
+      min-width: 260px;
     }
 
     #dist {
-      font-size: 40px;
+      font-size: 42px;
       font-weight: bold;
+      color: #111;
     }
 
     #status {
@@ -34,17 +35,17 @@
     }
 
     #debug {
-      margin-top: 10px;
       font-size: 12px;
       color: gray;
+      margin-top: 8px;
     }
 
     button {
-      padding: 10px 20px;
-      margin: 10px;
-      font-size: 16px;
+      padding: 10px 18px;
+      margin: 8px;
       border: none;
       border-radius: 8px;
+      font-size: 16px;
       cursor: pointer;
     }
 
@@ -55,21 +56,21 @@
 
 <body>
 
-<h2>📍 Live GPS Meter Tracker</h2>
+<h2>📍 Pro GPS + Sensor Tracker</h2>
 
 <div class="card">
   <div>Distance</div>
   <div id="dist">0</div>
   <div>meter</div>
 
-  <div id="status">Status: Not Started</div>
+  <div id="status">Not started</div>
   <div id="debug">Waiting...</div>
 </div>
 
 <br>
 
-<button class="start" onclick="startTracking()">Start</button>
-<button class="stop" onclick="stopTracking()">Stop</button>
+<button class="start" onclick="start()">Start</button>
+<button class="stop" onclick="stop()">Stop</button>
 
 <script>
 
@@ -77,7 +78,25 @@ let watchId = null;
 let lastPos = null;
 let total = 0;
 
-// better accuracy filter
+// ===== SENSOR DATA =====
+let motionScore = 0;
+
+// detect movement from accelerometer
+window.addEventListener("devicemotion", (event) => {
+  let acc = event.accelerationIncludingGravity;
+
+  if (!acc) return;
+
+  let speed =
+    Math.abs(acc.x || 0) +
+    Math.abs(acc.y || 0) +
+    Math.abs(acc.z || 0);
+
+  // movement strength
+  motionScore = speed;
+});
+
+// ===== DISTANCE FUNCTION =====
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
 
@@ -87,26 +106,37 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const Δφ = (lat2 - lat1) * Math.PI / 180;
   const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+  const a = Math.sin(Δφ/2)**2 +
             Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            Math.sin(Δλ/2)**2;
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
   return R * c;
 }
 
-function startTracking() {
+// ===== SMOOTHING FUNCTION =====
+function smooth(value, old) {
+  if (old === null) return value;
+  return (old * 0.7) + (value * 0.3);
+}
+
+// ===== START =====
+function start() {
 
   if (!navigator.geolocation) {
     alert("GPS not supported");
     return;
   }
 
-  document.getElementById("status").innerText = "Status: Tracking Started ✔️";
-  document.getElementById("dist").innerText = "0";
+  document.getElementById("status").innerText = "Tracking Started ✔️";
   total = 0;
   lastPos = null;
+
+  // ask permission for sensor (important for Android Chrome)
+  if (typeof DeviceMotionEvent.requestPermission === "function") {
+    DeviceMotionEvent.requestPermission();
+  }
 
   watchId = navigator.geolocation.watchPosition(
     (pos) => {
@@ -118,10 +148,10 @@ function startTracking() {
       };
 
       document.getElementById("debug").innerText =
-        `Lat: ${current.lat.toFixed(6)} | Lng: ${current.lng.toFixed(6)} | Acc: ${Math.round(current.acc)}m`;
+        `Acc: ${Math.round(current.acc)}m | Motion: ${motionScore.toFixed(2)}`;
 
-      // ignore bad accuracy
-      if (current.acc > 30) return;
+      // ignore bad GPS
+      if (current.acc > 60) return;
 
       if (lastPos) {
 
@@ -132,15 +162,22 @@ function startTracking() {
           current.lng
         );
 
-        // GPS noise filter
-        if (d > 5 && d < 200) {
-          total += d;
+        // ===== SMART FILTER =====
+        // motionScore helps detect real movement
+        let isMoving = motionScore > 0.5;
+
+        if (isMoving && d > 2 && d < 150) {
+
+          // smoothing applied
+          total = smooth(total + d, total);
+
           document.getElementById("dist").innerText =
             Math.round(total);
         }
       }
 
       lastPos = current;
+
     },
     (err) => {
       document.getElementById("status").innerText =
@@ -148,20 +185,21 @@ function startTracking() {
     },
     {
       enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 15000
+      maximumAge: 500,
+      timeout: 20000
     }
   );
 }
 
-function stopTracking() {
+// ===== STOP =====
+function stop() {
   if (watchId !== null) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
 
   document.getElementById("status").innerText =
-    "Status: Stopped ⛔";
+    "Stopped ⛔";
 }
 
 </script>
