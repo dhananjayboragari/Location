@@ -1,206 +1,228 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Pro GPS Tracker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fast Sheet Table (CSV)</title>
+
+  <!-- jQuery -->
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+
+  <!-- DataTables -->
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+
+  <!-- PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <style>
-    body {
-      font-family: Arial;
-      text-align: center;
-      background: #f5f5f5;
-      margin: 0;
-      padding: 20px;
-    }
+body {
+  font-family: Arial;
+  margin: 0;
+}
 
-    .card {
-      background: white;
-      padding: 20px;
-      margin-top: 20px;
-      border-radius: 12px;
-      display: inline-block;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      min-width: 260px;
-    }
+/* â CARD */
+.card {
+  position: sticky;
+  top: 0;
+  background: white;
+  padding: 12px 15px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  z-index: 1000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
-    #dist {
-      font-size: 42px;
-      font-weight: bold;
-      color: #111;
-    }
+#search {
+  padding: 8px;
+  width: 250px;
+}
 
-    #status {
-      margin-top: 10px;
-      font-weight: bold;
-    }
+/* â TABLE */
+.table-container {
+  overflow-x: auto;
+  padding: 15px;
+  display: none;
+}
 
-    #debug {
-      font-size: 12px;
-      color: gray;
-      margin-top: 8px;
-    }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #ccc; /* â outer border */
+}
 
-    button {
-      padding: 10px 18px;
-      margin: 8px;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-    }
+/* â HEADER */
+thead th {
+  background: #f2f2f2;
+  position: sticky;
+  top: 55px;
+  z-index: 2;
+  border: 1px solid #ccc; /* â header border */
+  padding: 8px;
+}
 
-    .start { background: green; color: white; }
-    .stop { background: red; color: white; }
+/* â BODY CELL */
+tbody td {
+  border: 1px solid #ddd; /* â cell border */
+  padding: 8px;
+}
+
+/* â HOVER EFFECT */
+tbody tr:hover {
+  background-color: #f9f9f9; /* â row hover */
+  cursor: pointer;
+}
+
+/* â ALTERNATE ROW COLOR (optional but nice) */
+tbody tr:nth-child(even) {
+  background-color: #fcfcfc;
+}
+
+select {
+  width: 100%;
+  padding: 4px;
+  margin-top: 4px;
+}
+
+/* hide default */
+.dataTables_length,
+.dataTables_paginate,
+.dataTables_info {
+  display: none;
+}
+
+#loading {
+  padding: 20px;
+  text-align: center;
+  font-weight: bold;
+}
   </style>
 </head>
 
 <body>
 
-<h2>📍 Pro GPS + Sensor Tracker</h2>
-
+<!-- â CARD -->
 <div class="card">
-  <div>Distance</div>
-  <div id="dist">0</div>
-  <div>meter</div>
-
-  <div id="status">Not started</div>
-  <div id="debug">Waiting...</div>
+  <input type="text" id="search" placeholder="🔍 Search...">
+  <div>Rows: <span id="count">0</span></div>
 </div>
 
-<br>
+<!-- â LOADING -->
+<div id="loading">Loading data...</div>
 
-<button class="start" onclick="start()">Start</button>
-<button class="stop" onclick="stop()">Stop</button>
+<!-- â TABLE -->
+<div class="table-container">
+  <table id="table">
+    <thead>
+      <tr id="header"></tr>   <!-- Title -->
+      <tr id="filters"></tr>  <!-- Filter -->
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
 
 <script>
 
-let watchId = null;
-let lastPos = null;
-let total = 0;
+const url = "https://docs.google.com/spreadsheets/d/12U0iM9kUZdB3nZmNNz9XmSNQqQ4jjPn927mvrB7-m9g/export?format=csv";
 
-// ===== SENSOR DATA =====
-let motionScore = 0;
+Papa.parse(url, {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
 
-// detect movement from accelerometer
-window.addEventListener("devicemotion", (event) => {
-  let acc = event.accelerationIncludingGravity;
+  complete: function(results) {
 
-  if (!acc) return;
+    let raw = results.data;
 
-  let speed =
-    Math.abs(acc.x || 0) +
-    Math.abs(acc.y || 0) +
-    Math.abs(acc.z || 0);
-
-  // movement strength
-  motionScore = speed;
-});
-
-// ===== DISTANCE FUNCTION =====
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-  const a = Math.sin(Δφ/2)**2 +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2)**2;
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c;
-}
-
-// ===== SMOOTHING FUNCTION =====
-function smooth(value, old) {
-  if (old === null) return value;
-  return (old * 0.7) + (value * 0.3);
-}
-
-// ===== START =====
-function start() {
-
-  if (!navigator.geolocation) {
-    alert("GPS not supported");
-    return;
-  }
-
-  document.getElementById("status").innerText = "Tracking Started ✔️";
-  total = 0;
-  lastPos = null;
-
-  // ask permission for sensor (important for Android Chrome)
-  if (typeof DeviceMotionEvent.requestPermission === "function") {
-    DeviceMotionEvent.requestPermission();
-  }
-
-  watchId = navigator.geolocation.watchPosition(
-    (pos) => {
-
-      const current = {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        acc: pos.coords.accuracy
-      };
-
-      document.getElementById("debug").innerText =
-        `Acc: ${Math.round(current.acc)}m | Motion: ${motionScore.toFixed(2)}`;
-
-      // ignore bad GPS
-      if (current.acc > 60) return;
-
-      if (lastPos) {
-
-        let d = getDistance(
-          lastPos.lat,
-          lastPos.lng,
-          current.lat,
-          current.lng
-        );
-
-        // ===== SMART FILTER =====
-        // motionScore helps detect real movement
-        let isMoving = motionScore > 0.5;
-
-        if (isMoving && d > 2 && d < 150) {
-
-          // smoothing applied
-          total = smooth(total + d, total);
-
-          document.getElementById("dist").innerText =
-            Math.round(total);
-        }
-      }
-
-      lastPos = current;
-
-    },
-    (err) => {
-      document.getElementById("status").innerText =
-        "Error: " + err.message;
-    },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 500,
-      timeout: 20000
+    if (!raw.length) {
+      $('#loading').text("No data found");
+      return;
     }
-  );
-}
 
-// ===== STOP =====
-function stop() {
-  if (watchId !== null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
+    // â CLEAN HEADER
+    let cols = Object.keys(raw[0]).map((col, i) => {
+      col = col.trim();
+      if (!col) return "Column " + (i + 1);
+      return col;
+    });
+
+    // â DATA CLEAN
+    let data = raw.map(obj =>
+      cols.map(c => obj[c] ? obj[c].split(" ")[0] : "")
+    );
+
+    // â REMOVE EMPTY COLUMN
+    let validIndex = cols.map((col, i) =>
+      data.some(row => row[i] !== "")
+    );
+
+    cols = cols.filter((_, i) => validIndex[i]);
+    data = data.map(row => row.filter((_, i) => validIndex[i]));
+
+    // â CREATE HEADER + FILTER ROW
+    cols.forEach(col => {
+      $('#header').append(`<th>${col}</th>`);
+      $('#filters').append(`<th></th>`);
+    });
+
+    // â DATATABLE INIT (IMPORTANT FIX)
+    let table = $('#table').DataTable({
+      data: data,
+      pageLength: 50,
+      deferRender: true,
+      dom: 'rt',
+      orderCellsTop: true   // ð¥ header + filter fix
+    });
+
+    // â SEARCH
+    $('#search').on('keyup', function () {
+      table.search(this.value).draw();
+    });
+
+    // â FILTER (UNCHANGED LOGIC)
+    $('#table thead tr:eq(1) th').each(function (i) {
+
+      let select = $('<select><option value="">All</option></select>')
+        .appendTo($(this))
+        .on('change', function () {
+
+          let val = $.fn.dataTable.util.escapeRegex($(this).val());
+
+          table.column(i)
+            .search(val ? '^' + val + '$' : '', true, false)
+            .draw();
+        });
+
+      let unique = new Set();
+
+      table.column(i).data().each(function (d) {
+        if (d && !unique.has(d)) {
+          unique.add(d);
+          select.append(`<option value="${d}">${d}</option>`);
+        }
+      });
+
+    });
+
+    // â COUNT FIX
+    function update() {
+      $('#count').text(table.rows({ filter: 'applied' }).data().length);
+    }
+
+    update();
+    table.on('draw', update);
+
+    // â SHOW TABLE
+    $('#loading').hide();
+    $('.table-container').show();
+
+  },
+
+  error: function(err) {
+    $('#loading').text("Error loading data");
+    console.error(err);
   }
 
-  document.getElementById("status").innerText =
-    "Stopped ⛔";
-}
+});
 
 </script>
 
